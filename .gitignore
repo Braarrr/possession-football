@@ -62,3 +62,7 @@ __pycache__/
 venv/
 env/
 .DS_Store
+
+# Local full-match submission files
+submission.csv
+submission_*.csv

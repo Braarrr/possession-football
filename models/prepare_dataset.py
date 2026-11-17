@@ -1,6 +1,9 @@
 
 import pandas as pd
 
+from features.nearest_player_features import calculate_nearest_player_team
+from starter.baseline import team_of_each_track
+from games import require
 from features.distance_features import calculate_distance_to_ball
 from features.velocity_features import extract_velocity_features
 from features.visibility_features import calculate_ball_visibility
@@ -12,8 +15,20 @@ def prepare_features(frame_df):
     velocity = extract_velocity_features(frame_df)
     visibility = calculate_ball_visibility(frame_df)
 
+    meta_path = require(["atd_meta"])[0]
+    team_of_track = team_of_each_track(meta_path)
+
+    nearest_team = calculate_nearest_player_team(
+        frame_df,
+        team_of_track
+    )
+    nearest_team["nearest_player_team"] = (
+        nearest_team["nearest_player_team"].map({"H": 0, "A": 1})
+    )
+
     features = distance.merge(velocity, on="frame_id")
     features = features.merge(visibility, on="frame_id")
+    features = features.merge(nearest_team, on="frame_id")
 
     return features
 
@@ -105,9 +120,28 @@ def prepare_training_data():
     return X_train, X_test, y_train, y_test
 
 if __name__ == "__main__":
-    X_train, X_test, y_train, y_test = prepare_training_data()
+    frame_df = pd.read_csv("data/processed_tracking.csv")
+
+    features = prepare_features(frame_df)
+    labels = generate_pseudo_labels()
+
+    dataset = merge_labels(features, labels)
+
+    train, test = chronological_split(dataset)
+
+    y_train = train["pseudo_label"].copy()
+    y_test = test["pseudo_label"].copy()
+
+    X_train = train.drop(columns="pseudo_label")
+    X_test = test.drop(columns="pseudo_label")
+
+    X_train, X_test = impute_missing_values(X_train, X_test)
+
+    X_train = X_train.drop(columns="frame_id")
+    X_test = X_test.drop(columns="frame_id")
 
     print("\n── FINAL DATASET ──────────────────────────")
+    print("Full dataset:", dataset.shape)
     print("X_train:", X_train.shape)
     print("X_test:", X_test.shape)
     print("y_train:", y_train.shape)
@@ -121,6 +155,10 @@ if __name__ == "__main__":
     print(y_test.value_counts())
 
     print("\n── VALIDATION ─────────────────────────────")
+    print("Duplicate frames:", dataset["frame_id"].duplicated().sum())
+    print("Missing labels:", dataset["pseudo_label"].isna().sum())
     print("NaN in X_train:", X_train.isna().sum().sum())
     print("NaN in X_test:", X_test.isna().sum().sum())
     print("Feature count:", X_train.shape[1])
+    print("Train frame range:", train["frame_id"].min(), "-", train["frame_id"].max())
+    print("Test frame range:", test["frame_id"].min(), "-", test["frame_id"].max())
